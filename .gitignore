@@ -1,0 +1,24 @@
+# Over GitHub's 100MB per-file limit; re-download with scripts/make_seeds.py
+data/chembl_v29.csv
+
+# Directories kept out of the repo
+docs/
+report/
+figures/
+results/
+results_*/
+*.pdf
+setup_ec2.sh
+
+# Run artifacts
+*.pt
+*.pt.last.pt
+*.pkl
+!oracle/*.pkl
+*.log
+*_log.txt
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
