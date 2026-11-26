@@ -19,7 +19,8 @@
 # train-repeats 3. One round takes about 53 min and 18 rounds about 16 h. Run
 # sequentially, since the evaluation stage already saturates 8 cores.
 set -u
-cd /home/ubuntu/lingollm
+cd "$(dirname "$0")/.." || exit 1
+mkdir -p results_sweep
 
 # Variants are chosen by measured dimension, not by uniform alpha: alpha affects
 # dimension very non-linearly. Blending in a single generic deletion

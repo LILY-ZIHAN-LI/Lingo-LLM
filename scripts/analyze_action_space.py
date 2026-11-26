@@ -102,6 +102,13 @@ def main() -> int:
                     help="rdkit only: pool overlap ratio, see src/editors.py:_mix")
     ap.add_argument("--qed-disjoint", action="store_true",
                     help="rdkit only: use _QED_SWAP instead of _SHRINK for heavy molecules")
+    ap.add_argument("--sample-by-template", action="store_true",
+                    help="sample RDKit proposals by template")
+    ap.add_argument("--product-pick", default="random",
+                    choices=["random", "first", "last"],
+                    help="select a product from each sampled template")
+    ap.add_argument("--pool-design", default=None,
+                    help="use the RDKit pool from scripts/design_pool.py")
     args = ap.parse_args()
 
     seeds = Path(args.data).joinpath(args.seeds_file).read_text().split()
@@ -109,7 +116,10 @@ def main() -> int:
     bank = OracleBank()
     editors = (make_gen_editors(args.ckpt, bank) if args.editors == "gen"
                else make_editors(overlap=args.pool_overlap,
-                                 qed_disjoint=args.qed_disjoint))
+                                 qed_disjoint=args.qed_disjoint,
+                                 pool_design=args.pool_design,
+                                 sample_by_template=args.sample_by_template,
+                                 product_pick=args.product_pick))
     print(f"editor pool: {args.editors}"
           + (f" ({args.ckpt})" if args.editors == "gen" else ""))
 

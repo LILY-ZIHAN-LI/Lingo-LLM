@@ -1,5 +1,9 @@
-# Over GitHub's 100MB per-file limit; re-download with scripts/make_seeds.py
-data/chembl_v29.csv
+# Local datasets and generated data
+data/*.csv
+data/designed_pool.json
+data/template_profile.json
+data/seeds_meta_v2.json
+data/seeds_test_v2.txt
 
 # Directories kept out of the repo
 docs/
@@ -9,11 +13,14 @@ results/
 results_*/
 *.pdf
 setup_ec2.sh
+OVERNIGHT_SUMMARY.md
 
 # Run artifacts
 *.pt
 *.pt.last.pt
 *.pkl
+*.npz
+*.zip
 !oracle/*.pkl
 *.log
 *_log.txt
@@ -22,3 +29,9 @@ setup_ec2.sh
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+
+# Local credentials and configuration
+.env
+.env.*
+*.pem
+*.key

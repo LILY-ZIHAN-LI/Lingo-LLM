@@ -38,6 +38,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--curve", default="results_sweep/dimension_curve.json")
     ap.add_argument("--out", default="figures/fig11_dimension_curve.png")
+    ap.add_argument("--no-caption", action="store_true",
+                    help="omit the caption embedded in the figure")
     args = ap.parse_args()
 
     blob = json.loads(Path(args.curve).read_text())
@@ -54,7 +56,7 @@ def main() -> int:
     # color (see figstyle).
     ax.axhline(0, color=PALETTE["random"], linestyle=(0, (4, 2)),
                linewidth=1.2, zorder=1)
-    ax.annotate("equal to random", xy=(2.57, 0), xytext=(2.57, -0.00012),
+    ax.annotate("equal to random", xy=(2.59, 0), xytext=(2.59, -0.00012),
                 color=INK_SECONDARY, fontsize=8, ha="right")
 
     xs_all = sorted(v["eff_dim"] for v in fam.values())
@@ -81,11 +83,6 @@ def main() -> int:
         ax.plot(x, mu, marker=MARKER[name], markersize=7.5, color=c,
                 linewidth=0, markeredgecolor="white", markeredgewidth=1.0,
                 label=f"{DISPLAY[name]}  ({b:+.5f}/dim)", zorder=4)
-        # Label directly: palette contrast rules require labels, not color alone
-        ax.annotate(DISPLAY[name].split(" (")[0],
-                    xy=(x[-1], mu[-1]), xytext=(6, 2),
-                    textcoords="offset points", color=c, fontsize=8.5,
-                    fontweight="semibold", va="center")
 
     # Generative branch: a different editor family with only one seed, so it is
     # deliberately drawn as hollow black markers with no line and no series color,
@@ -135,15 +132,21 @@ def main() -> int:
     ax.set_ylim(-0.00215, 0.00272)
     ax.legend(loc="upper left", ncol=1, handletextpad=0.6)
 
-    cap = ("Error bars are the range over 3 training seeds (not a CI: n = 3). "
-           "RDKit pool overlap swept via src/editors.py:_mix; "
-           "points placed by measured dimension, not knob setting.")
-    fig.text(0.0, -0.045, cap, fontsize=7.5, color=INK_SECONDARY, ha="left")
+    if not args.no_caption:
+        _caption(fig)
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out)
     print(f"wrote {args.out}")
     return 0
+
+
+def _caption(fig) -> None:
+    cap = ("Error bars are the range over 3 training seeds (not a CI: n = 3). RDKit pool\n"
+           "overlap swept via src/editors.py:_mix; points placed by measured dimension,\n"
+           "not knob setting.")
+    fig.text(0.0, -0.022, cap, fontsize=7.5, color=INK_SECONDARY, ha="left",
+             va="top", linespacing=1.45)
 
 
 if __name__ == "__main__":

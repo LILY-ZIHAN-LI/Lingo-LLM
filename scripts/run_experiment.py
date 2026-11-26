@@ -188,6 +188,15 @@ def main() -> int:
                     help="use _QED_SWAP instead of the sa _SHRINK pool for heavy molecules, raising the dimension")
     ap.add_argument("--escape-bits", action="store_true",
                     help="add 4 observation bits for editors that already failed on the current molecule")
+    ap.add_argument("--sample-by-template", action="store_true",
+                    help="sample RDKit proposals from distinct reaction templates")
+    ap.add_argument("--product-pick", default="random",
+                    choices=["random", "first", "last"],
+                    help="select a product from each sampled template")
+    ap.add_argument("--pool-design", default=None,
+                    help="use the RDKit pool from scripts/design_pool.py")
+    ap.add_argument("--rich-state", action="store_true",
+                    help="include archive occupancy and per-expert call and gain history")
     args = ap.parse_args()
 
     if args.quick:
@@ -199,14 +208,18 @@ def main() -> int:
     test_seeds = data.joinpath("seeds_test.txt").read_text().split()[: args.n_test]
     cfg_dict = {"max_steps": args.max_steps, "lam": args.lam}
     env_kw = {"use_escape_bits": args.escape_bits,
+              "use_rich_state": args.rich_state,
               "editor_kind": args.editor_kind, "gen_ckpt": args.gen_ckpt,
               "pool_overlap": args.pool_overlap,
-              "qed_disjoint": args.qed_disjoint}
+              "qed_disjoint": args.qed_disjoint,
+              "pool_design": args.pool_design,
+              "sample_by_template": args.sample_by_template,
+              "product_pick": args.product_pick}
     env = MolEnv(OracleBank(), EpisodeConfig(**cfg_dict), **env_kw)
 
     print(f"train {len(train_seeds)} / test {len(test_seeds)} seeds, "
           f"{args.max_steps} steps, lam={args.lam}, seed={args.seed}, "
-          f"escape_bits={args.escape_bits}, editors={args.editor_kind}, "
+          f"escape_bits={args.escape_bits}, rich_state={args.rich_state}, editors={args.editor_kind}, "
           f"overlap={args.pool_overlap}, qed_disjoint={args.qed_disjoint}\n")
 
     policies = make_baselines(seed=args.seed)

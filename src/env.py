@@ -27,6 +27,7 @@ from .oracles import OracleBank
 RDLogger.DisableLog("rdApp.*")
 
 _FP_BITS = 64  # 1024 bits would swamp the other features and DQN cannot learn from 200 seeds
+_OCC_BINS = 4
 _fpgen = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=_FP_BITS)
 
 
@@ -87,6 +88,8 @@ class MolEnv:
     # editors already failed on the current molecule and clear when it changes.
     # Off by default: enabling it changes obs_dim and breaks old policies.pkl.
     use_escape_bits: bool = False
+    # Include archive shape and per-expert history. This changes obs_dim.
+    use_rich_state: bool = False
     # Editor pool: 'rdkit' is the deterministic reaction pool (supplementary
     # control), 'gen' is the conditional SMILES transformer (main experiment).
     # Both honour the same Editor contract, so the rest of env is unchanged.
@@ -98,6 +101,9 @@ class MolEnv:
     # original behaviour.
     pool_overlap: float = 0.0
     qed_disjoint: bool = False
+    pool_design: str | None = None
+    sample_by_template: bool = False
+    product_pick: str = "random"
 
     def __post_init__(self) -> None:
         if self.editor_kind == "gen":
@@ -106,10 +112,28 @@ class MolEnv:
             self.editors = make_gen_editors(self.gen_ckpt, self.bank)
         elif self.editor_kind == "rdkit":
             self.editors = make_editors(overlap=self.pool_overlap,
-                                        qed_disjoint=self.qed_disjoint)
+                                        qed_disjoint=self.qed_disjoint,
+                                        pool_design=self.pool_design,
+                                        sample_by_template=self.sample_by_template,
+                                        product_pick=self.product_pick)
         else:
             raise ValueError(f"unknown editor_kind: {self.editor_kind}")
         self.reset_counters()
+
+    def clone(self):
+        """Copy episode state for a counterfactual probe.
+
+        Share the immutable editor pools and the scoring cache across branches.
+        """
+        import copy
+        bank, editors = self.bank, self.editors
+        self.bank = self.editors = None
+        try:
+            c = copy.deepcopy(self)
+        finally:
+            self.bank, self.editors = bank, editors
+        c.bank, c.editors = bank, editors
+        return c
 
     def reset_counters(self) -> None:
         self.n_generation_attempts = 0
@@ -124,6 +148,8 @@ class MolEnv:
         self.prev_action = -1
         self.failed_on_current: set[int] = set()
         self.logs: list[StepLog] = []
+        self.calls_so_far = np.zeros(len(EXPERTS), dtype=np.float32)
+        self.gain_so_far = np.zeros(len(EXPERTS), dtype=np.float32)
         self.seen: set[str] = {self.seed_smiles}
         self.n_generation_attempts = 0
 
@@ -155,6 +181,20 @@ class MolEnv:
             for a in self.failed_on_current:
                 bits[a] = 1.0
             feats.append(bits)
+        if self.use_rich_state:
+            # 占据直方图：各目标 4 个等宽格子里前沿点的比例。
+            # HV + max 看不出前沿是挤成一团还是铺开，这个能。
+            occ = np.zeros((N_OBJ, _OCC_BINS), dtype=np.float32)
+            for j in range(N_OBJ):
+                b = np.clip((arch[:, j] * _OCC_BINS).astype(int), 0, _OCC_BINS - 1)
+                np.add.at(occ[j], b, 1.0)
+            feats.append((occ / max(len(arch), 1)).ravel())
+            feats.append(arch.min(axis=0))
+            feats.append(arch.mean(axis=0))
+            # history-aware：谁被调过、谁换来过 HV。
+            # HV 增益的量级是 1e-3，乘 100 和其余特征放到同一个尺度上。
+            feats.append(self.calls_so_far / self.cfg.max_steps)
+            feats.append(self.gain_so_far * 100.0)
         if self.use_fingerprint:
             feats.append(_fingerprint(self.current))
         return np.concatenate(feats)
@@ -163,6 +203,9 @@ class MolEnv:
     def obs_dim(self) -> int:
         return N_OBJ + len(EXPERTS) + 1 + 1 + 1 + N_OBJ + 1 + (
             len(EXPERTS) if self.use_escape_bits else 0
+        ) + (
+            N_OBJ * _OCC_BINS + 2 * N_OBJ + 2 * len(EXPERTS)
+            if self.use_rich_state else 0
         ) + (_FP_BITS if self.use_fingerprint else 0)
 
     # ---- one step ----
@@ -257,6 +300,8 @@ class MolEnv:
             best_single_gain=best_single_gain,
         ))
 
+        self.calls_so_far[action] += 1.0
+        self.gain_so_far[action] += hv_after - hv_before
         self.prev_action = action
         self.t += 1
         done = self.t >= self.cfg.max_steps

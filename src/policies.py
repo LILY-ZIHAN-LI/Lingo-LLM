@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .interfaces import N_ACTIONS, N_OBJ
+from .interfaces import EXPERTS, N_ACTIONS, N_OBJ
 
 
 # ==========================================================================
@@ -262,6 +262,35 @@ class DQNPolicy:
         return losses
 
 
+@dataclass
+class SingleExpertPolicy:
+    """整条 episode 只调一个 expert，不路由。
+
+    proposal 审稿意见 #1 要的那条基线。它堵的是这个解释漏洞：
+    router 赢过 random，可能只是因为它学会了躲开弱 expert ——
+    那样的话"全程只用最强的那个 expert"应该赢得一样多甚至更多，
+    这时"学会排序"就不是一个有内容的说法。
+    选哪个 expert 必须在 val 上定（scripts/run_fixed_expert.py 就是这么做的），
+    在 test 上挑最好的那个等于把 4 次比较当 1 次报。
+    """
+
+    action: int
+    name: str = ""
+
+    def __post_init__(self):
+        if not self.name:
+            self.name = f"only_{EXPERTS[self.action]}"
+
+    def reset(self, episode_seed: int) -> None:
+        pass
+
+    def act(self, obs, t: int) -> int:
+        return self.action
+
+    def update(self, *a, **k) -> None:
+        pass
+
+
 def make_baselines(seed: int = 0) -> dict:
     """The two baselines that do no learning at all. gap must be fitted first to
     estimate its normalization scale."""
@@ -269,3 +298,9 @@ def make_baselines(seed: int = 0) -> dict:
         "random": RandomPolicy(seed=seed),
         "round_robin": RoundRobinPolicy(),
     }
+
+
+def make_fixed_experts() -> dict:
+    """四条单 expert 基线，不需要任何训练。"""
+    return {f"only_{e}": SingleExpertPolicy(action=a)
+            for a, e in enumerate(EXPERTS)}

@@ -96,9 +96,35 @@ def main() -> int:
     ap.add_argument("--max-act", type=float, default=0.55,
                     help="activity ceiling; above this the oracle is near saturation and any edit only hurts")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--exclude", nargs="*", default=[],
+                    help="exclude scaffolds from these existing seed files")
+    ap.add_argument("--only", default=None, choices=["train", "val", "test"],
+                    help="write only the selected split")
+    ap.add_argument("--suffix", default="",
+                    help="append this suffix to the split and metadata filenames")
     args = ap.parse_args()
 
-    need = args.n_train + args.n_val + args.n_test
+    if args.only:
+        need = {"train": args.n_train, "val": args.n_val,
+                "test": args.n_test}[args.only]
+    else:
+        need = args.n_train + args.n_val + args.n_test
+
+    banned: set[str] = set()
+    for f in args.exclude:
+        p = Path(f)
+        if not p.exists():
+            raise SystemExit(f"--exclude file does not exist: {p}")
+        n0 = len(banned)
+        for ln in p.read_text().splitlines():
+            s = ln.strip()
+            if s:
+                sc = murcko_scaffold(s)
+                if sc:
+                    banned.add(sc)
+        print(f"excluded {p}: +{len(banned) - n0} scaffolds")
+    if banned:
+        print(f"excluded {len(banned)} existing scaffolds\n")
 
     raw, source = load_pool(args.raw)
     print(f"source: {source}, {len(raw)} raw rows")
@@ -141,7 +167,7 @@ def main() -> int:
           f"[{args.min_act}, {args.max_act}]")
 
     picked: list[tuple[str, list[float]]] = []
-    used_scaffolds: set[str] = set()
+    used_scaffolds: set[str] = set(banned)
     for s, v in cands:
         scaf = murcko_scaffold(s)
         if not scaf or scaf in used_scaffolds:
@@ -157,10 +183,14 @@ def main() -> int:
     # --- split with no scaffold overlap ---
     random.Random(args.seed).shuffle(picked)
     splits: dict[str, list[str]] = {}
-    i = 0
-    for name, n in [("train", args.n_train), ("val", args.n_val), ("test", args.n_test)]:
-        splits[name] = [s for s, _ in picked[i:i + n]]
-        i += n
+    if args.only:
+        splits[args.only] = [s for s, _ in picked[:need]]
+    else:
+        i = 0
+        for name, n in [("train", args.n_train), ("val", args.n_val),
+                        ("test", args.n_test)]:
+            splits[name] = [s for s, _ in picked[i:i + n]]
+            i += n
         print(f"  {name}: {len(splits[name])}")
 
     sel_act = [max(v[0], v[1]) for _, v in picked]
@@ -171,10 +201,13 @@ def main() -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     for name, mols in splits.items():
-        (out / f"seeds_{name}.txt").write_text("\n".join(mols) + "\n")
-    (out / "seeds_meta.json").write_text(json.dumps({
+        (out / f"seeds_{name}{args.suffix}.txt").write_text("\n".join(mols) + "\n")
+    (out / f"seeds_meta{args.suffix}.json").write_text(json.dumps({
         "source": source,
         "split_seed": args.seed,
+        "excluded_files": list(args.exclude),
+        "n_excluded_scaffold": len(banned),
+        "only_split": args.only,
         "n_scanned": len(pre),
         "n_scored": len(rows),
         "max_qed": args.max_qed,
